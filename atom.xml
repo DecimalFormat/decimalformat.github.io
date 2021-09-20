@@ -2,13 +2,520 @@
 <feed xmlns="http://www.w3.org/2005/Atom">
     <id>https://decimalformat.github.io</id>
     <title>机智的钢板</title>
-    <updated>2021-09-20T03:13:53.583Z</updated>
+    <updated>2021-09-20T05:50:21.647Z</updated>
     <generator>https://github.com/jpmonette/feed</generator>
     <link rel="alternate" href="https://decimalformat.github.io"/>
     <link rel="self" href="https://decimalformat.github.io/atom.xml"/>
     <logo>https://decimalformat.github.io/images/avatar.png</logo>
     <icon>https://decimalformat.github.io/favicon.ico</icon>
     <rights>All rights reserved 2021, 机智的钢板</rights>
+    <entry>
+        <title type="html"><![CDATA[2021 祥云杯 CRYPTO]]></title>
+        <id>https://decimalformat.github.io/2021-xiang-yun-bei-crypto/</id>
+        <link href="https://decimalformat.github.io/2021-xiang-yun-bei-crypto/">
+        </link>
+        <updated>2021-09-20T05:11:48.000Z</updated>
+        <content type="html"><![CDATA[<h1 id="guess">guess</h1>
+<h2 id="题目">题目</h2>
+<p>guess.py</p>
+<pre><code>from Crypto.Util.number import (
+    bytes_to_long,
+    getPrime,
+    long_to_bytes,
+    getRandomNBitInteger,
+)
+import random
+import hashlib
+from math import gcd
+import socketserver
+
+KEYSIZE = 512
+WELCOME = &quot;welcome to my funny challenge !!! Can you guess right 32 times in a row? &quot;
+String = &quot;ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyz&quot;
+
+def exgcd(a, b):
+    if b == 0:
+        return 1, 0, a
+    else:
+        x, y, q = exgcd(b, a % b)
+        x, y = y, (x - (a // b) * y)
+        return x, y, q
+
+def invert(a,p):
+    x, y, q = exgcd(a,p)
+    if q != 1:
+        raise Exception(&quot;No solution.&quot;)
+    else:
+        return (x + p) % p
+
+def lcm(a,b):
+    return a*b // gcd(a,b)
+
+def proof_of_work():
+    STR = &quot;&quot;.join([String[random.randint(0, len(String) - 1)] for _ in range(16)])
+    HASH = hashlib.sha256(STR.encode()).hexdigest()
+    return STR[:4], STR[4:], HASH
+
+def keygen():
+    # part 1
+    p, q = getPrime(KEYSIZE), getPrime(KEYSIZE)
+    n = p * q
+    g = n + 1
+    LAMBDA = lcm(p - 1, q - 1)
+
+    # part 2
+    _key = open(&quot;key&quot;, &quot;r&quot;).read()
+    key = []
+    for i in _key.split(&quot;\n&quot;):
+        for j in i[1:-1].split(&quot; &quot;):
+            if int(j) not in key:
+                key.append(int(j))
+    assert len(key) == 80
+    assert key[0] == 119 and key[1] ==  241 and key[2] ==  718 and key[3] == 647
+    return n, g, LAMBDA, key
+
+def enc(n, g, m):
+    while 1:
+        r = random.randint(2, n - 1)
+        if gcd(r, n) == 1:
+            break
+    c = (pow(g, m, n ** 2) * pow(r, n, n ** 2)) % (n ** 2)
+    return c
+
+def dec(n, g, LAMBDA, c):
+    L1 = (pow(c, LAMBDA, n ** 2) - 1) // n
+    L2 = (pow(g, LAMBDA, n ** 2) - 1) // n
+    m = (invert(L2, n) * L1) % n
+    return m
+
+class server(socketserver.BaseRequestHandler):
+    def _recv(self):
+        data = self.request.recv(1024)
+        return data.strip()
+
+    def _send(self, msg, newline=True):
+        if isinstance(msg, bytes):
+            msg += b&quot;\n&quot;
+        else:
+            msg += &quot;\n&quot;
+            msg = msg.encode()
+        self.request.sendall(msg)
+
+    def handle(self):
+        print(&quot;Service start.&quot;)
+        START, END, HASH = proof_of_work()
+        self._send(&quot;SHA-256(?+{}) == {}&quot;.format(END, HASH))
+        RCV = self._recv().decode()
+        if RCV != START:
+            return
+        flag = open(&quot;flag&quot;, &quot;rb&quot;).read()
+        self._send(WELCOME)
+        # step 1. KeyGen
+        for _ in range(32):
+            self._send(&quot;round &quot; + str(_+1))
+            n, g, LAM, KEY = keygen()
+            self._send(&quot;Step 1 - KeyGen. This is my public key.&quot;)
+            self._send(&quot;n = &quot; + str(n))
+            self._send(&quot;g = &quot; + str(g))
+            # step 2. Phase 1
+            self._send(
+                &quot;Step 2 - Phase 1. Now, you can give me one ciphertexts,I will return the corresponding plaintext.&quot;
+            )
+
+            self._send(&quot;Please give me one decimal ciphertext.&quot;)
+            cipher = int(self._recv().decode())
+            plaintext = str(dec(n, g, LAM, cipher))
+            self._send(&quot;This is the corresponding plaintext.&quot;)
+            self._send(plaintext)
+
+            # step 3. challenge
+            self._send(
+                &quot;Step 3 - Challenge. Now, you must give me two decimal plaintexts(m0,m1), I will encry them and return a ciphertext randomly&quot;
+            )
+            self._send(&quot;Give me m0.&quot;)
+            plaintext1 = int(self._recv().decode())
+            self._send(&quot;Give me m1.&quot;)
+            plaintext2 = int(self._recv().decode())
+
+            if (
+                plaintext1 &lt;= 2
+                or plaintext2 &lt;= 2
+                or len(bin(plaintext1)) != len(bin(plaintext2))
+            ):
+                return
+            R = 2 * random.randint(0, 39)
+            I = random.randint(0, 1)
+            cipher1 = enc(n, g, plaintext1 * plaintext2 * KEY[R])
+            cipher2 = enc(n, g, plaintext1 * plaintext2 * KEY[R + 1])
+            self._send(&quot;This is a ciphertext.&quot;)
+            self._send(str([cipher1, cipher2][I]))
+
+            # step 4. Phase 2
+
+            self._send(
+                &quot;Step 4 - Phase 2. Now, you can give me some ciphertexts,I will return the corresponding plaintext.But you can not give me the ciphertext that I give you in step 3.&quot;
+            )
+            self._send(&quot;Please give me one decimal ciphertext &quot;)
+            cipher = int(self._recv().decode())
+            plaintext = str(dec(n, g, LAM, cipher))
+            if int(plaintext) == plaintext1 * plaintext2 * KEY[R] or int(plaintext) == plaintext1 * plaintext2 * KEY[R+1]:
+                return
+            self._send(&quot;This is the corresponding plaintext.&quot;)
+            self._send(plaintext)
+
+            # step.5 Guess
+            self._send(
+                &quot;Step 5 - Guess. You must tell me which ciphertext was I give you in step 3, 0 or 1(m0 -&gt; c0 , m1 -&gt; c1)?&quot;
+            )
+            Guess = int(self._recv().decode())
+
+            if Guess == I:
+                self._send(&quot;Good! You are right&quot;)
+            else:
+                self._send(&quot;Sorry!&quot;)
+                return
+        self._send(flag)
+
+class ForkedServer(socketserver.ThreadingMixIn, socketserver.TCPServer):
+    pass
+
+if __name__ == &quot;__main__&quot;:
+    HOST, PORT = &quot;0.0.0.0&quot;, 10001
+    server = ForkedServer((HOST, PORT), server)
+    server.allow_reuse_address = True
+    server.serve_forever()
+</code></pre>
+<p>key.sage</p>
+<pre><code>from Crypto.Util.number import getRandomNBitInteger
+
+while 1:
+    A = []
+    key = random_matrix(ZZ, 20, 4, x = 100, y =1000)
+    for i in range(20):
+        for j in range(4):
+            if key[i,j] not in A:   
+                A.append(key[i,j])
+    if len(A) == 80:
+        break
+hint = Matrix(key * vector([getRandomNBitInteger(1024) for _ in range(4)]) for _ in range(12))
+open('key','w').write(str(key))
+open('hint','w').write(str(hint))
+</code></pre>
+<h2 id="分析">分析</h2>
+<p>下载附件可以得到三个文件<br>
+guess.py<br>
+hint<br>
+key.sage<br>
+其中Guess.py里写了程序的逻辑，大致的意思就是只要猜对32次2选1的key就可以得到flag。<br>
+然后hint和key.sage里写了一些提示和生成key文件的代码，但是我最终解题的时候并没有用到这两个文件。</p>
+<p>分析加密逻辑：</p>
+<pre><code>def enc(n, g, m):
+    while 1:
+        r = random.randint(2, n - 1)
+        if gcd(r, n) == 1:
+            break
+    c = (pow(g, m, n ** 2) * pow(r, n, n ** 2)) % (n ** 2)
+    return c
+
+def dec(n, g, LAMBDA, c):
+    L1 = (pow(c, LAMBDA, n ** 2) - 1) // n
+    L2 = (pow(g, LAMBDA, n ** 2) - 1) // n
+    m = (invert(L2, n) * L1) % n
+    return m
+</code></pre>
+<p>根据enc和dec里面的加密代码和解密代码可以得出这是属于Paillier cryptosystem，一种同态加密算法。参考https://blog.csdn.net/qq_33885461/article/details/86555560。<br>
+解这道题的关键在于上面链接中的第3.4点。</p>
+<figure data-type="image" tabindex="1"><img src="https://decimalformat.github.io/post-images/1632116066600.png" alt="" loading="lazy"></figure>
+<p>也就是同态的属性，对于明文相加后的密文表现为两个密文的乘积。对于明文相乘后的密文表现为一个密文的明文次方。</p>
+<p>然后我们来看代码中的逻辑：</p>
+<pre><code>self._send(&quot;Step 1 - KeyGen. This is my public key.&quot;)
+self._send(&quot;n = &quot; + str(n))
+self._send(&quot;g = &quot; + str(g))
+</code></pre>
+<p>第一步会给出该加密算法的公钥(n,g)</p>
+<pre><code>self._send(
+    &quot;Step 2 - Phase 1. Now, you can give me one ciphertexts,I will return the corresponding plaintext.&quot;
+)
+self._send(&quot;Please give me one decimal ciphertext.&quot;)
+cipher = int(self._recv().decode())
+plaintext = str(dec(n, g, LAM, cipher))
+self._send(&quot;This is the corresponding plaintext.&quot;)
+self._send(plaintext)
+</code></pre>
+<p>第二步要求我们输入一个密文，然后系统会将其解密后返回。</p>
+<pre><code>self._send(
+    &quot;Step 3 - Challenge. Now, you must give me two decimal plaintexts(m0,m1), I will encry them and return a ciphertext randomly&quot;
+)
+self._send(&quot;Give me m0.&quot;)
+plaintext1 = int(self._recv().decode())
+self._send(&quot;Give me m1.&quot;)
+plaintext2 = int(self._recv().decode())
+ 
+if (
+    plaintext1 &lt;= 2
+    or plaintext2 &lt;= 2
+    or len(bin(plaintext1)) != len(bin(plaintext2))
+):
+    return
+R = 2 * random.randint(0, 39)
+I = random.randint(0, 1)
+cipher1 = enc(n, g, plaintext1 * plaintext2 * KEY[R])
+cipher2 = enc(n, g, plaintext1 * plaintext2 * KEY[R + 1])
+self._send(&quot;This is a ciphertext.&quot;)
+self._send(str([cipher1, cipher2][I]))
+</code></pre>
+<p>第三步要我们给出两个明文，且这两个明文不能小于2，并且他们的二进制位数要相等。之后系统计算他们的乘积与随机的一个key值相乘后再进行加密。并且随机的给出其中一个密文。</p>
+<pre><code>self._send(
+    &quot;Step 4 - Phase 2. Now, you can give me some ciphertexts,I will return the corresponding plaintext.But you can not give me the ciphertext that I give you in step 3.&quot;
+)
+self._send(&quot;Please give me one decimal ciphertext &quot;)
+cipher = int(self._recv().decode())
+plaintext = str(dec(n, g, LAM, cipher))
+if int(plaintext) == plaintext1 * plaintext2 * KEY[R] or int(plaintext) == plaintext1 * plaintext2 * KEY[R+1]:
+    return
+self._send(&quot;This is the corresponding plaintext.&quot;)
+self._send(plaintext)
+</code></pre>
+<p>第四步同第二步，要求我们输入一个密文，然后系统会计算出他的明文并给出。但是不能输入第三步给出的密文。</p>
+<pre><code>self._send(
+    &quot;Step 5 - Guess. You must tell me which ciphertext was I give you in step 3, 0 or 1(m0 -&gt; c0 , m1 -&gt; c1)?&quot;
+)
+Guess = int(self._recv().decode())
+ 
+if Guess == I:
+    self._send(&quot;Good! You are right&quot;)
+else:
+    self._send(&quot;Sorry!&quot;)
+    return
+</code></pre>
+<p>第五步就是要我们猜测第三步中给出的密文是来自m0还是m1（其实两者都不是，因为他们加密的明文是将两者相乘后再与key值相乘）。其实就是要我们猜相乘的是第一个key还是第二个key值。如果猜对则继续，猜错就结束。</p>
+<p>因为第三步我们可以得到m0与m1与key相乘后的密文，后面在第四步我们有一个选择密文的机会，但是他不能输入第三步给的密文，因此我们可以利用同态的属性，密文的平方等于明文的两倍。<br>
+我们如果输入第三步给出的密文的平方，得到的明文将会是原明文的两倍。这样我们就可以得到m0<em>m1</em>key的值。<br>
+并且m0与m1是我们输入的值，因此我们可以构造。那样就可以求得key的值。<br>
+然后我们可以发现该代码取key值的时候是存在一点缺陷的。</p>
+<pre><code>R = 2 * random.randint(0, 39)
+I = random.randint(0, 1)
+</code></pre>
+<p>R的值永远是2的倍数。</p>
+<pre><code>_key = open(&quot;key&quot;, &quot;r&quot;).read()
+key = []
+for i in _key.split(&quot;\n&quot;):
+    for j in i[1:-1].split(&quot; &quot;):
+        if int(j) not in key:
+            key.append(int(j))
+assert len(key) == 80
+assert key[0] == 119 and key[1] ==  241 and key[2] ==  718 and key[3] == 647
+</code></pre>
+<p>而key是从文件中取得的，也就是说key值是永远不变的，而且选0或选1的key值也是固定的。那么我们只需要存两个数组，尝试数次，先算出key值，再选择0或者1，如果正确就存入相应的数组中，如果错误就存入另一个数组中，最后就能求出所有的key值。再根据key值选路即可。</p>
+<h2 id="exp">EXP</h2>
+<pre><code>from pwn import *
+import hashlib 
+import re
+import random 
+from math import gcd
+def proof_of_work(end, hash):
+	String = &quot;ABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890abcdefghijklmnopqrstuvwxyz&quot;
+	for i in String:
+		for j in String:
+			for k in String:
+				for l in String:
+					s = i+j+k+l+end
+					r = hashlib.sha256(s.encode()).hexdigest()
+					if r == hash:
+						return (i+j+k+l)	
+ 
+def enc(n, g, m):
+    while 1:
+        r = random.randint(2, n - 1)
+        if gcd(r, n) == 1:
+            break
+    c = (pow(g, m, n ** 2) * pow(r, n, n ** 2)) % (n ** 2)
+    return c
+ 
+ 
+def connect():
+	p = remote(ip,port)
+	a = p.recv(1024).decode()
+	end = re.search('(?&lt;=\?\+)(.*?)(?=\))', a).group(0)
+	hash = re.search('(?&lt;=== )(.*?)(?=\\n)', a).group(0)
+	pf = proof_of_work(end, hash)
+	p.send(pf.encode())
+	return p
+k0=[]
+#k0=[639, 130, 142, 885, 783, 983, 638, 566, 521, 307, 355, 939, 288, 148, 995, 114, 746, 585, 550, 577, 942, 614, 903, 299, 685, 899, 427, 558, 416, 271, 349, 718, 530, 184, 637, 313, 751, 498, 611, 119]
+
+k1=[]
+#k1=[128, 123, 232, 526, 113, 977, 121, 860, 400, 944, 216, 745, 647, 158, 281, 237, 309, 129, 877, 186, 286, 653, 201, 542, 641, 430, 646, 244, 396, 548, 461, 936, 780, 333, 888, 727, 810, 918, 241]
+ 
+ 
+o = 0
+ 
+def loop(p,o,k0,k1):
+	while True:
+		a = p.recvuntil(&quot;Please give me one decimal ciphertext.\n&quot;).decode()
+		n = int(re.search('(?&lt;=n = )(\d+)(?=\\n)', a).group(0))
+		g = int(re.search('(?&lt;=g = )(\d+)(?=\\n)', a).group(0))
+		p.send(str(enc(n,g,100)).encode())
+		p.recvuntil(&quot;Give me m0.\n&quot;)
+		p.send(str(10).encode())
+		p.recvuntil(&quot;Give me m1.\n&quot;)
+		p.send(str(10).encode())
+		a = p.recvuntil(&quot;Please give me one decimal ciphertext \n&quot;).decode()
+		b = int(re.search('(\d+)(?=\\n)', a).group(0))
+		b = (b**2)%(n**2)
+		p.send(str(b).encode())
+		a = p.recvuntil(&quot;(m0 -&gt; c0 , m1 -&gt; c1)?\n&quot;).decode()
+		b = int(re.search('(\d+)(?=\\n)', a).group(0))
+		if b//2//100 not in k0 + k1:
+			s = '0'
+		elif b//2//100 in k0:
+			s = '0'
+		else:
+			s = '1'
+ 
+		p.send(s.encode())
+		a = p.recv(1024).decode()
+		if &quot;Sorry&quot; not in a:
+			if (b//2//100 not in k0) and s == '0':
+				k0.append(b//2//100)
+		else:
+			if b//2//100 not in k1:
+				k1.append(b//2//100)
+				break
+		o += 1
+		print(o)
+		if o == 32:
+			print(p.recv().decode())
+			break
+ 
+while True:
+	p = connect()
+	loop(p,0,k0,k1)
+</code></pre>
+<figure data-type="image" tabindex="2"><img src="https://decimalformat.github.io/post-images/1632116587533.png" alt="" loading="lazy"></figure>
+<h1 id="randomrsa">randomRsa</h1>
+<h2 id="题目-2">题目</h2>
+<pre><code>from Crypto.Util.number import *
+import gmpy2
+import libnum
+import random
+import binascii
+import os
+
+flag=r'flag{}'
+
+p=getPrime(512)
+q=getPrime(512)
+e=0x10001
+n=p*q
+ct=pow(flag,e,n)
+print(&quot;n=&quot;+ n)
+print(&quot;ct=&quot;+ ct)
+
+dp=r''
+seeds = []
+for i in range(0,len(dp)):
+    seeds.append(random.randint(0,10000))
+
+res = []
+for i in range(0, len(dp)):
+    random.seed(seeds[i])
+    rands = []
+    for j in range(0,4):
+        rands.append(random.randint(0,255))
+
+    res.append(ord(dp[i]) ^ rands[i%4])
+    del rands[i%4]
+    print(str(rands))
+
+print(res)
+print(seeds)
+
+# n=81196282992606113591233615204680597645208562279327854026981376917977843644855180528227037752692498558370026353244981467900057157997462760732019372185955846507977456657760125682125104309241802108853618468491463326268016450119817181368743376919334016359137566652069490881871670703767378496685419790016705210391
+# ct=61505256223993349534474550877787675500827332878941621261477860880689799960938202020614342208518869582019307850789493701589309453566095881294166336673487909221860641809622524813959284722285069755310890972255545436989082654705098907006694780949725756312169019688455553997031840488852954588581160550377081811151
+
+# [58, 53, 122] [145, 124, 244] [5, 19, 192] [255, 23, 64] [57, 113, 194] [246, 205, 162] [112, 87, 95] [215, 147, 105] [16, 131, 38] [234, 36, 46] [68, 61, 146] [148, 61, 9] [139, 77, 32] [96, 56, 160] [121, 76, 17] [114, 246, 92] [178, 206, 60] [168, 147, 26] [168, 41, 68] [24, 93, 84] [175, 43, 88] [147, 97, 153] [42, 94, 45] [150, 103, 127] [68, 163, 62] [165, 37, 89] [219, 248, 59] [241, 182, 8] [140, 211, 146] [88, 226, 2] [48, 150, 56] [87, 109, 255] [227, 216, 65] [23, 190, 10] [5, 25, 64] [6, 12, 124] [53, 113, 124] [255, 192, 158] [61, 239, 5] [62, 108, 86] [123, 44, 64] [195, 192, 30] [30, 82, 95] [56, 178, 165] [68, 77, 239] [106, 247, 226] [17, 46, 114] [91, 71, 156] [157, 43, 182] [146, 6, 42] [148, 143, 161] [108, 33, 139] [139, 169, 157] [71, 140, 25] [28, 153, 26] [241, 221, 235] [28, 131, 141] [159, 111, 184] [47, 206, 11] [220, 152, 157] [41, 213, 97] [4, 220, 10] [77, 13, 248] [94, 140, 110] [25, 250, 226] [218, 102, 109] [189, 238, 66] [91, 18, 131] [23, 239, 190] [159, 33, 72] [183, 78, 208] [209, 213, 101] [111, 50, 220] [166, 104, 233] [170, 144, 10] [187, 87, 175] [195, 59, 104] [165, 179, 179] [99, 247, 153] [195, 61, 100] [223, 159, 165] [230, 93, 184] [87, 28, 35] [35, 122, 38] [158, 188, 163] [229, 192, 222] [12, 12, 192] [207, 95, 224] [127, 113, 137] [22, 114, 143] [13, 45, 144] [70, 140, 211] [57, 101, 42] [132, 62, 129] [40, 128, 124] [1, 132, 161] [164, 33, 133] [252, 201, 32] [8, 18, 247] [1, 88, 55] [201, 135, 186] [101, 254, 125] [236, 196, 39] [148, 24, 103] [101, 29, 253] [97, 156, 64] [90, 103, 91] [50, 48, 80] [206, 22, 93] [11, 114, 174] [61, 132, 247] [215, 32, 232] [95, 128, 90] [57, 35, 228] [163, 143, 107] [178, 250, 28] [64, 107, 225] [106, 115, 207] [85, 134, 21] [118, 201, 76] [234, 34, 22] [241, 236, 122] [111, 185, 127] [1, 26, 164] [254, 57, 117] [243, 27, 32] [161, 88, 80] [50, 165, 93] [87, 182, 216] [184, 159, 63] [167, 166, 123] [37, 78, 33] [186, 81, 58] [48, 3, 239] [70, 186, 13] [56, 108, 178] [54, 55, 235] [105, 180, 105] [16, 194, 98] [136, 11, 41] [18, 203, 79] [185, 114, 170] [148, 181, 223] [118, 57, 160] [23, 250, 181] [235, 219, 228] [44, 151, 38] [185, 224, 134] [42, 162, 122] [3, 9, 158] [129, 245, 2] [66, 241, 92] [80, 124, 36]
+# [55, 5, 183, 192, 103, 32, 211, 116, 102, 120, 118, 54, 120, 145, 185, 254, 77, 144, 70, 54, 193, 73, 64, 0, 79, 244, 190, 23, 215, 187, 53, 176, 27, 138, 42, 89, 158, 254, 159, 133, 78, 11, 155, 163, 145, 248, 14, 179, 23, 226, 220, 201, 5, 71, 241, 195, 75, 191, 237, 108, 141, 141, 185, 76, 7, 113, 191, 48, 135, 139, 100, 83, 212, 242, 21, 143, 255, 164, 146, 119, 173, 255, 140, 193, 173, 2, 224, 205, 68, 10, 77, 180, 24, 23, 196, 205, 108, 28, 243, 80, 140, 4, 98, 76, 217, 70, 208, 202, 78, 177, 124, 10, 168, 165, 223, 105, 157, 152, 48, 152, 51, 133, 190, 202, 136, 204, 44, 33, 58, 4, 196, 219, 71, 150, 68, 162, 175, 218, 173, 19, 201, 100, 100, 85, 201, 24, 59, 186, 46, 130, 147, 219, 22, 81]
+# [4827, 9522, 552, 880, 7467, 7742, 9425, 4803, 6146, 4366, 1126, 4707, 1138, 2367, 1081, 5577, 4592, 5897, 4565, 2012, 2700, 1331, 9638, 7741, 50, 824, 8321, 7411, 6145, 1271, 7637, 5481, 8474, 2085, 2421, 590, 7733, 9427, 3278, 5361, 1284, 2280, 7001, 8573, 5494, 7431, 2765, 827, 102, 1419, 6528, 735, 5653, 109, 4158, 5877, 5975, 1527, 3027, 9776, 5263, 5211, 1293, 5976, 7759, 3268, 1893, 6546, 4684, 419, 8334, 7621, 1649, 6840, 2975, 8605, 5714, 2709, 1109, 358, 2858, 6868, 2442, 8431, 8316, 5446, 9356, 2817, 2941, 3177, 7388, 4149, 4634, 4316, 5377, 4327, 1774, 6613, 5728, 1751, 8478, 3132, 4680, 3308, 9769, 8341, 1627, 3501, 1046, 2609, 7190, 5706, 3627, 8867, 2458, 607, 642, 5436, 6355, 6326, 1481, 9887, 205, 5511, 537, 8576, 6376, 3619, 6609, 8473, 2139, 3889, 1309, 9878, 2182, 8572, 9275, 5235, 6989, 6592, 4618, 7883, 5702, 3999, 925, 2419, 7838, 3073, 488, 21, 3280, 9915, 3672, 579]
+</code></pre>
+<p>这道题一上来就给人秒了，题目放出来没多久，看到的时候已经有一人做出来了。<br>
+这道题考的是一个random.seed伪随机数生成，加上RSA dp解密。</p>
+<h2 id="分析-2">分析</h2>
+<pre><code>p=getPrime(512)
+q=getPrime(512)
+e=0x10001
+n=p*q
+ct=pow(flag,e,n)
+print(&quot;n=&quot;+ n)
+print(&quot;ct=&quot;+ ct)
+</code></pre>
+<p>前面都是正常的加密，没有可疑的地方。</p>
+<pre><code>dp=r''
+seeds = []
+for i in range(0,len(dp)):
+    seeds.append(random.randint(0,10000))
+ 
+res = [] 
+for i in range(0, len(dp)):
+    random.seed(seeds[i])
+    rands = []
+    for j in range(0,4):
+        rands.append(random.randint(0,255))
+ 
+    res.append(ord(dp[i]) ^ rands[i%4])
+    del rands[i%4]
+    print(str(rands))
+ 
+print(res) 
+print(seeds)
+</code></pre>
+<p>后面对dp进行了一些操作，所以我们知道只要求出dp就能够得到pq，这道题也就解决了。<br>
+代码先生成了一些从0到10000的随机数，这些随机数在最后也都打印给我们了。<br>
+第二个for循环中，利用这些随机数作为种子，从而继续生成4个从0，255的随机数。并且将第i%4位与dp的第i位进行异或操作。并且删掉了这个随机数。<br>
+并将最后的res也就是异或后的dp打印出来。</p>
+<p>这里其实很简单了，因为seed都告诉我们了，我们只要用这些seed重新去生成随机数就可以了。但是这里有一个坑，题目的代码是python3的格式的，但是随机数生成的random是python2的。我用python3的random.seed生成的随机数完全不一样。</p>
+<h2 id="exp-2">EXP</h2>
+<pre><code>import gmpy2
+import libnum
+ 
+n = 81196282992606113591233615204680597645208562279327854026981376917977843644855180528227037752692498558370026353244981467900057157997462760732019372185955846507977456657760125682125104309241802108853618468491463326268016450119817181368743376919334016359137566652069490881871670703767378496685419790016705210391
+ct = 61505256223993349534474550877787675500827332878941621261477860880689799960938202020614342208518869582019307850789493701589309453566095881294166336673487909221860641809622524813959284722285069755310890972255545436989082654705098907006694780949725756312169019688455553997031840488852954588581160550377081811151
+seeds = [4827, 9522, 552, 880, 7467, 7742, 9425, 4803, 6146, 4366, 1126, 4707, 1138, 2367, 1081, 5577, 4592, 5897, 4565, 2012, 2700, 1331, 9638, 7741, 50, 824, 8321, 7411, 6145, 1271, 7637, 5481, 8474, 2085, 2421, 590, 7733, 9427, 3278, 5361, 1284, 2280, 7001, 8573, 5494, 7431, 2765, 827, 102, 1419, 6528, 735, 5653, 109, 4158, 5877, 5975, 1527, 3027, 9776, 5263, 5211, 1293, 5976, 7759, 3268, 1893, 6546, 4684, 419, 8334, 7621, 1649, 6840, 2975, 8605, 5714, 2709, 1109, 358, 2858, 6868, 2442, 8431, 8316, 5446, 9356, 2817, 2941, 3177, 7388, 4149, 4634, 4316, 5377, 4327, 1774, 6613, 5728, 1751, 8478, 3132, 4680, 3308, 9769, 8341, 1627, 3501, 1046, 2609, 7190, 5706, 3627, 8867, 2458, 607, 642, 5436, 6355, 6326, 1481, 9887, 205, 5511, 537, 8576, 6376, 3619, 6609, 8473, 2139, 3889, 1309, 9878, 2182, 8572, 9275, 5235, 6989, 6592, 4618, 7883, 5702, 3999, 925, 2419, 7838, 3073, 488, 21, 3280, 9915, 3672, 579]
+res = [55, 5, 183, 192, 103, 32, 211, 116, 102, 120, 118, 54, 120, 145, 185, 254, 77, 144, 70, 54, 193, 73, 64, 0, 79, 244, 190, 23, 215, 187, 53, 176, 27, 138, 42, 89, 158, 254, 159, 133, 78, 11, 155, 163, 145, 248, 14, 179, 23, 226, 220, 201, 5, 71, 241, 195, 75, 191, 237, 108, 141, 141, 185, 76, 7, 113, 191, 48, 135, 139, 100, 83, 212, 242, 21, 143, 255, 164, 146, 119, 173, 255, 140, 193, 173, 2, 224, 205, 68, 10, 77, 180, 24, 23, 196, 205, 108, 28, 243, 80, 140, 4, 98, 76, 217, 70, 208, 202, 78, 177, 124, 10, 168, 165, 223, 105, 157, 152, 48, 152, 51, 133, 190, 202, 136, 204, 44, 33, 58, 4, 196, 219, 71, 150, 68, 162, 175, 218, 173, 19, 201, 100, 100, 85, 201, 24, 59, 186, 46, 130, 147, 219, 22, 81]
+dp = ''
+
+for i in range(len(res)):
+	random.seed(seeds[i])
+	rands = []
+	for j in range(0,4):
+		rands.append(random.randint(0,255))
+	res[i] = res[i] ^ rands[i%4]
+ 
+for i in res:
+	dp += chr(i)
+ 
+dp = int(dp)
+ 
+def only_dp_rsahack(e,n,dp,c):
+	for x in range(1,e):
+		if e*dp%x == 1:
+			p = (e*dp - 1)//x + 1
+			if n%p !=0:
+				continue
+			q = n//p
+			phi = (p-1)*(q-1)
+			d = gmpy2.invert(e,phi)
+			m = gmpy2.powmod(c,d,n)
+			if len(hex(m)[2:])%2 == 1:
+				continue
+			print(libnum.n2s(m))
+ 
+e = 65537
+only_dp_rsahack(e,n,dp,ct)
+</code></pre>
+<figure data-type="image" tabindex="3"><img src="https://decimalformat.github.io/post-images/1632116978257.png" alt="" loading="lazy"></figure>
+]]></content>
+    </entry>
     <entry>
         <title type="html"><![CDATA[2021 羊城杯 CRYPTO RSA?]]></title>
         <id>https://decimalformat.github.io/2021-yang-cheng-bei-crypto-rsa/</id>
